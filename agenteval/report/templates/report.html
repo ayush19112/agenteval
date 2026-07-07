@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>agenteval scorecard</title>
+<style>
+  :root { --pass:#0a7d33; --fail:#c22f2f; --ink:#1a2233; --muted:#5c6675; --line:#e3e7ee; --bg:#f6f8fb; --card:#ffffff; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", system-ui, -apple-system, sans-serif; margin:0; background:var(--bg); color:var(--ink); }
+  .wrap { max-width:1080px; margin:0 auto; padding:32px 24px 64px; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  h2 { font-size:18px; margin:32px 0 12px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:24px; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+  .badge.ok { background:#e3f5e9; color:var(--pass); }
+  .badge.warn { background:#fdeaea; color:var(--fail); }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; }
+  .card h3 { margin:0 0 2px; font-size:15px; }
+  .card .model { color:var(--muted); font-size:12px; margin-bottom:12px; font-family:Consolas,monospace; }
+  .kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .kpi { background:var(--bg); border-radius:8px; padding:10px 12px; }
+  .kpi .v { font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .kpi .l { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; font-size:13px; }
+  th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  th { background:var(--bg); font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  tr:last-child td { border-bottom:none; }
+  .num { text-align:right; }
+  .pass { color:var(--pass); font-weight:600; }
+  .fail { color:var(--fail); font-weight:600; }
+  .flaky { color:#b96b00; font-weight:600; }
+  details { margin:6px 0; }
+  details summary { cursor:pointer; color:var(--muted); font-size:12px; }
+  .failbox { background:#fdf6f6; border:1px solid #f0d9d9; border-radius:8px; padding:10px 12px; margin:8px 0; font-size:12px; }
+  .failbox .out { font-family:Consolas,monospace; white-space:pre-wrap; color:var(--ink); margin:6px 0; }
+  code { font-family:Consolas,monospace; font-size:12px; background:var(--bg); padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>agenteval scorecard</h1>
+  <div class="sub">
+    generated {{ generated_at }} &middot; {{ groups|length }} agent configuration(s)
+    {% if calibration %}
+      &middot; judge {{ calibration.model }}:
+      <span class="badge {{ 'ok' if calibration.calibrated else 'warn' }}">
+        kappa {{ "%.2f"|format(calibration.kappa) }} vs human labels (n={{ calibration.n }})
+      </span>
+    {% endif %}
+  </div>
+
+  <div class="cards">
+    {% for g in groups %}
+    <div class="card">
+      <h3>{{ g.framework }}</h3>
+      <div class="model">{{ g.model }}</div>
+      <div class="kpis">
+        <div class="kpi"><div class="v">{{ "%.0f"|format(g.pass_at_1 * 100) }}%</div><div class="l">pass@1</div></div>
+        <div class="kpi"><div class="v">{{ "%.0f"|format(g.pass_at_k * 100) }}%</div><div class="l">pass@k</div></div>
+        <div class="kpi"><div class="v">{{ g.n_runs }}</div><div class="l">runs ({{ g.n_tasks }} tasks)</div></div>
+        <div class="kpi"><div class="v">${{ "%.4f"|format(g.total_cost_usd) }}</div><div class="l">total cost</div></div>
+        <div class="kpi"><div class="v">{{ "%.0f"|format(g.latency.p50) }}ms</div><div class="l">latency p50</div></div>
+        <div class="kpi"><div class="v">{{ "%.0f"|format(g.latency.p95) }}ms</div><div class="l">latency p95</div></div>
+        {% if g.judge_pass_rate is not none %}
+        <div class="kpi"><div class="v">{{ "%.0f"|format(g.judge_pass_rate * 100) }}%</div><div class="l">judge pass rate</div></div>
+        {% endif %}
+        {% if g.faithfulness_mean is not none %}
+        <div class="kpi"><div class="v">{{ "%.0f"|format(g.faithfulness_mean * 100) }}%</div><div class="l">faithfulness</div></div>
+        {% endif %}
+        {% if g.abstention_rate is not none %}
+        <div class="kpi"><div class="v">{{ "%.0f"|format(g.abstention_rate * 100) }}%</div><div class="l">correct abstention</div></div>
+        {% endif %}
+        {% if g.n_errors %}
+        <div class="kpi"><div class="v">{{ g.n_errors }}</div><div class="l">errored runs</div></div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% for g in groups %}
+  <h2>{{ g.framework }} / <code>{{ g.model }}</code> — by category</h2>
+  <table>
+    <tr><th>category</th><th class="num">tasks</th><th class="num">pass@1</th><th class="num">pass@k</th><th class="num">cost</th><th class="num">latency p50</th><th class="num">p95</th></tr>
+    {% for name, c in g.categories.items() %}
+    <tr>
+      <td>{{ name }}</td>
+      <td class="num">{{ c.tasks }}</td>
+      <td class="num {{ 'pass' if c.pass_at_1 >= 0.75 else ('fail' if c.pass_at_1 < 0.4 else '') }}">{{ "%.0f"|format(c.pass_at_1 * 100) }}%</td>
+      <td class="num">{{ "%.0f"|format(c.pass_at_k * 100) }}%</td>
+      <td class="num">${{ "%.4f"|format(c.cost_usd) }}</td>
+      <td class="num">{{ "%.0f"|format(c.latency.p50) }}ms</td>
+      <td class="num">{{ "%.0f"|format(c.latency.p95) }}ms</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <h2>{{ g.framework }} / <code>{{ g.model }}</code> — per task</h2>
+  <table>
+    <tr><th>task</th><th>category</th><th class="num">samples</th><th class="num">pass@1</th><th class="num">pass@k</th><th class="num">pass^k</th><th class="num">variance</th><th class="num">cost/run</th><th class="num">p50</th></tr>
+    {% for t in g.tasks %}
+    <tr>
+      <td><code>{{ t.task_id }}</code></td>
+      <td>{{ t.category }}</td>
+      <td class="num">{{ t.n }}</td>
+      <td class="num {{ 'pass' if t.pass_at_1 == 1 else ('fail' if t.pass_at_1 == 0 else 'flaky') }}">{{ "%.0f"|format(t.pass_at_1 * 100) }}%</td>
+      <td class="num">{{ "✓" if t.pass_at_k else "✗" }}</td>
+      <td class="num">{{ "✓" if t.pass_all_k else "✗" }}</td>
+      <td class="num {{ 'flaky' if t.variance > 0 else '' }}">{{ "%.2f"|format(t.variance) }}{{ " ⚠" if t.variance > 0 else "" }}</td>
+      <td class="num">${{ "%.5f"|format(t.mean_cost_usd) }}</td>
+      <td class="num">{{ "%.0f"|format(t.latency.p50) }}ms</td>
+    </tr>
+    {% if t.failures %}
+    <tr><td colspan="9" style="background:var(--bg);">
+      <details>
+        <summary>{{ t.failures|length }} failing run(s) — drill down</summary>
+        {% for f in t.failures %}
+        <div class="failbox">
+          <div><code>{{ f.run_id }}</code>{% if f.error %} — <span class="fail">error: {{ f.error }}</span>{% endif %}</div>
+          <div class="out">{{ f.final_output or "(no output)" }}</div>
+          {% for c in f.failed_checks %}
+          <div><span class="fail">✗ {{ c.name }}</span> <span style="color:var(--muted)">{{ c.detail }}</span></div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </details>
+    </td></tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+  {% endfor %}
+
+  <div class="sub" style="margin-top:32px">
+    pass@1 = mean success over k samples &middot; pass@k = at least one sample succeeded &middot;
+    pass^k = every sample succeeded &middot; variance &gt; 0 marks flaky tasks &middot;
+    a run succeeds only if every check passes
+  </div>
+</div>
+</body>
+</html>

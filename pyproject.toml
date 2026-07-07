@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agenteval"
+version = "0.1.0"
+description = "Framework-agnostic 'pytest for agents': run any agent, get a scorecard across correctness, cost, latency, and behavior."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "pydantic>=2.7",
+    "tenacity>=8.2",
+    "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+# LLM providers are optional: the whole platform runs (and is tested) with the
+# built-in deterministic mock model. Install this extra to call real models.
+llm = ["litellm>=1.40"]
+dashboard = ["fastapi>=0.110", "uvicorn>=0.29"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+agenteval = "agenteval.cli:main"
+
+[project.entry-points.pytest11]
+agenteval = "agenteval.pytest_plugin"
+
+[tool.setuptools.packages.find]
+include = ["agenteval*"]
+
+[tool.setuptools.package-data]
+"agenteval.calibration" = ["*.jsonl"]
+"agenteval.report" = ["templates/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["agenteval/tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: needs a real LLM (Ollama or a free API key); skipped by default",
+]
+addopts = "-m 'not integration'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

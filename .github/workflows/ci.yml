@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[dev]" langgraph langchain-core
+      - name: Lint
+        run: ruff check agenteval
+      - name: Unit tests (no LLM calls; integration tests are excluded by default)
+        run: pytest -q
+      - name: Zero-key demo smoke test
+        run: |
+          python -m agenteval.cli run --model mock/good --samples 1 --db ci.db
+          python -m agenteval.cli run --model mock/weak --samples 1 --db ci.db
+          python -m agenteval.cli evaluate --judge-model mock/judge --db ci.db
+          python -m agenteval.cli report --db ci.db --out ci-report.html
+          python -m agenteval.calibration.calibrate --model mock/judge
+      - name: Benchmark tasks as pytest tests (plugin)
+        run: >
+          pytest --pyargs agenteval.benchmarks -q
+          -k "weather_and_currency or stock_price or london_weather"
+          --eval-model mock/good --eval-judge-model mock/judge --eval-threshold 0.6
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        run: npm ci
+        working-directory: agenteval/report/dashboard/frontend
+      - name: Build
+        run: npm run build
+        working-directory: agenteval/report/dashboard/frontend
