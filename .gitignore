@@ -9,3 +9,6 @@ node_modules/
 *.db
 /report.html
 /judge_calibration.json
+
+# Local Claude Code settings
+.claude/
